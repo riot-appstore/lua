@@ -748,10 +748,14 @@
 ** smaller buffer would force a memory allocation for each call to
 ** 'string.format'.)
 */
+#ifndef LUAL_BUFFERSIZE
+
 #if LUA_FLOAT_TYPE == LUA_FLOAT_LONGDOUBLE
 #define LUAL_BUFFERSIZE		8192
 #else
 #define LUAL_BUFFERSIZE   ((int)(0x80 * sizeof(void*) * sizeof(lua_Integer)))
+#endif
+
 #endif
 
 /* }================================================================== */
