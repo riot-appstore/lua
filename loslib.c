@@ -99,45 +99,6 @@ static time_t l_checktime (lua_State *L, int arg) {
 /* }================================================================== */
 
 
-/*
-** {==================================================================
-** Configuration for 'tmpnam':
-** By default, Lua uses tmpnam except when POSIX is available, where
-** it uses mkstemp.
-** ===================================================================
-*/
-#if !defined(lua_tmpnam)	/* { */
-
-#if defined(LUA_USE_POSIX)	/* { */
-
-#include <unistd.h>
-
-#define LUA_TMPNAMBUFSIZE	32
-
-#if !defined(LUA_TMPNAMTEMPLATE)
-#define LUA_TMPNAMTEMPLATE	"/tmp/lua_XXXXXX"
-#endif
-
-#define lua_tmpnam(b,e) { \
-        strcpy(b, LUA_TMPNAMTEMPLATE); \
-        e = mkstemp(b); \
-        if (e != -1) close(e); \
-        e = (e == -1); }
-
-#else				/* }{ */
-
-/* ISO C definitions */
-#define LUA_TMPNAMBUFSIZE	L_tmpnam
-#define lua_tmpnam(b,e)		{ e = (tmpnam(b) == NULL); }
-
-#endif				/* } */
-
-#endif				/* } */
-/* }================================================================== */
-
-
-
-
 static int os_execute (lua_State *L) {
   const char *cmd = luaL_optstring(L, 1, NULL);
   int stat = system(cmd);
@@ -160,17 +121,6 @@ static int os_rename (lua_State *L) {
   const char *fromname = luaL_checkstring(L, 1);
   const char *toname = luaL_checkstring(L, 2);
   return luaL_fileresult(L, rename(fromname, toname) == 0, NULL);
-}
-
-
-static int os_tmpname (lua_State *L) {
-  char buff[LUA_TMPNAMBUFSIZE];
-  int err;
-  lua_tmpnam(buff, err);
-  if (err)
-    return luaL_error(L, "unable to generate a unique filename");
-  lua_pushstring(L, buff);
-  return 1;
 }
 
 
@@ -392,7 +342,6 @@ static const luaL_Reg syslib[] = {
   {"rename",    os_rename},
   {"setlocale", os_setlocale},
   {"time",      os_time},
-  {"tmpname",   os_tmpname},
   {NULL, NULL}
 };
 
