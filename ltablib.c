@@ -173,7 +173,7 @@ static int tconcat (lua_State *L) {
   const char *sep = luaL_optlstring(L, 2, "", &lsep);
   lua_Integer i = luaL_optinteger(L, 3, 1);
   last = luaL_optinteger(L, 4, last);
-  luaL_buffinit(L, &b);
+  luaL_buffinitsize(L, &b, LUAL_BUFFERSIZE);
   for (; i < last; i++) {
     addfield(L, &b, i);
     luaL_addlstring(&b, sep, lsep);

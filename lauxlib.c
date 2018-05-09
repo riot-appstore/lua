@@ -23,6 +23,7 @@
 */
 
 #include "lua.h"
+#include "llimits.h" /* to get lua_assert */
 
 #include "lauxlib.h"
 
@@ -493,10 +494,9 @@ static void *newbox (lua_State *L, size_t newsize) {
 
 
 /*
-** check whether buffer is using a userdata on the stack as a temporary
-** buffer
+** check whether buffer has been assigned a memory region.
 */
-#define buffonstack(B)	((B)->b != (B)->initb)
+#define buffallocated(B) ((B)->b != NULL)
 
 
 /*
@@ -504,6 +504,15 @@ static void *newbox (lua_State *L, size_t newsize) {
 */
 LUALIB_API char *luaL_prepbuffsize (luaL_Buffer *B, size_t sz) {
   lua_State *L = B->L;
+
+  lua_assert((B->size == 0) == (B->b == NULL));
+  lua_assert((B->n <= B->size));
+
+  /* Force an allocation if the requested size is zero and the buffer is not
+   * initialized. This avoids weird bugs */
+  if (sz == 0 && B->size == 0)
+    sz = 1;
+
   if (B->size - B->n < sz) {  /* not enough space? */
     char *newbuff;
     size_t newsize = B->size * 2;  /* double buffer size */
@@ -512,11 +521,10 @@ LUALIB_API char *luaL_prepbuffsize (luaL_Buffer *B, size_t sz) {
     if (newsize < B->n || newsize - B->n < sz)
       luaL_error(L, "buffer too large");
     /* create larger buffer */
-    if (buffonstack(B))
+    if (buffallocated(B))
       newbuff = (char *)resizebox(L, -1, newsize);
     else {  /* no buffer yet */
       newbuff = (char *)newbox(L, newsize);
-      memcpy(newbuff, B->b, B->n * sizeof(char));  /* copy original content */
     }
     B->b = newbuff;
     B->size = newsize;
@@ -542,7 +550,7 @@ LUALIB_API void luaL_addstring (luaL_Buffer *B, const char *s) {
 LUALIB_API void luaL_pushresult (luaL_Buffer *B) {
   lua_State *L = B->L;
   lua_pushlstring(L, B->b, B->n);
-  if (buffonstack(B)) {
+  if (buffallocated(B)) {
     resizebox(L, -2, 0);  /* delete old buffer */
     lua_remove(L, -2);  /* remove its header from the stack */
   }
@@ -559,23 +567,24 @@ LUALIB_API void luaL_addvalue (luaL_Buffer *B) {
   lua_State *L = B->L;
   size_t l;
   const char *s = lua_tolstring(L, -1, &l);
-  if (buffonstack(B))
+  if (buffallocated(B))
     lua_insert(L, -2);  /* put value below buffer */
   luaL_addlstring(B, s, l);
-  lua_remove(L, (buffonstack(B)) ? -2 : -1);  /* remove value */
+  lua_remove(L, -2);  /* remove value */
 }
 
 
 LUALIB_API void luaL_buffinit (lua_State *L, luaL_Buffer *B) {
   B->L = L;
-  B->b = B->initb;
+  B->b = NULL;
   B->n = 0;
-  B->size = LUAL_BUFFERSIZE;
+  B->size = 0;
 }
 
 
 LUALIB_API char *luaL_buffinitsize (lua_State *L, luaL_Buffer *B, size_t sz) {
   luaL_buffinit(L, B);
+
   return luaL_prepbuffsize(B, sz);
 }
 

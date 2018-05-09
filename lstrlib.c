@@ -773,7 +773,7 @@ static int str_gsub (lua_State *L) {
   luaL_argcheck(L, tr == LUA_TNUMBER || tr == LUA_TSTRING ||
                    tr == LUA_TFUNCTION || tr == LUA_TTABLE, 3,
                       "string/function/table expected");
-  luaL_buffinit(L, &b);
+  luaL_buffinitsize(L, &b, luaL_len(L, 1));
   if (anchor) {
     p++; lp--;  /* skip anchor character */
   }
@@ -1020,7 +1020,7 @@ static int str_format (lua_State *L) {
   const char *strfrmt = luaL_checklstring(L, arg, &sfl);
   const char *strfrmt_end = strfrmt+sfl;
   luaL_Buffer b;
-  luaL_buffinit(L, &b);
+  luaL_buffinitsize(L, &b, LUAL_BUFFERSIZE);
   while (strfrmt < strfrmt_end) {
     if (*strfrmt != L_ESC)
       luaL_addchar(&b, *strfrmt++);
@@ -1335,7 +1335,7 @@ static int str_pack (lua_State *L) {
   size_t totalsize = 0;  /* accumulate total size of result */
   initheader(L, &h);
   lua_pushnil(L);  /* mark to separate arguments from string buffer */
-  luaL_buffinit(L, &b);
+  luaL_buffinitsize(L, &b, LUAL_BUFFERSIZE);
   while (*fmt != '\0') {
     int size, ntoalign;
     KOption opt = getdetails(&h, totalsize, &fmt, &size, &ntoalign);
