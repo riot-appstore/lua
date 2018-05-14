@@ -592,21 +592,53 @@ static int pmain (lua_State *L) {
   return 1;
 }
 
+static void *l_alloc (void *ud, void *ptr, size_t osize, size_t nsize) {
+  (void)ud; (void)osize;  /* not used */
+  if (nsize == 0) {
+    free(ptr);
+    return NULL;
+  }
+  else
+    return realloc(ptr, nsize);
+}
+
+static int panic (lua_State *L) {
+  lua_writestringerror("PANIC: unprotected error in call to Lua API (%s)\n",
+                        lua_tostring(L, -1));
+  return 0;  /* return to Lua to abort */
+}
 
 int main (int argc, char **argv) {
   int status, result;
-  lua_State *L = luaL_newstate();  /* create state */
+  lua_State *L;
+
+  #ifdef LUA_DEBUG
+    Memcontrol mc;
+    luaB_init_memcontrol(&mc, l_alloc, NULL);
+    L = luaB_newstate(&mc);
+  #else
+    L = lua_newstate(l_alloc, NULL);
+  #endif /* LUA_DEBUG */
+
   if (L == NULL) {
     l_message(argv[0], "cannot create state: not enough memory");
     return EXIT_FAILURE;
   }
+
+  lua_atpanic(L, &panic);
   lua_pushcfunction(L, &pmain);  /* to call 'pmain' in protected mode */
   lua_pushinteger(L, argc);  /* 1st argument */
   lua_pushlightuserdata(L, argv); /* 2nd argument */
   status = lua_pcall(L, 2, 1, 0);  /* do the call */
   result = lua_toboolean(L, -1);  /* get result */
   report(L, status);
-  lua_close(L);
+
+  #ifdef LUA_DEBUG
+    luaB_close(L);
+  #else
+    lua_close(L);
+  #endif /* LUA_DEBUG */
+
   return (result && status == LUA_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 

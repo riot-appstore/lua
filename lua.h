@@ -124,7 +124,6 @@ typedef int (*lua_Writer) (lua_State *L, const void *p, size_t sz, void *ud);
 typedef void * (*lua_Alloc) (void *ud, void *ptr, size_t osize, size_t nsize);
 
 
-
 /*
 ** generic extra include file
 */
@@ -132,6 +131,12 @@ typedef void * (*lua_Alloc) (void *ud, void *ptr, size_t osize, size_t nsize);
 #include LUA_USER_H
 #endif
 
+/* (optional) test module
+ *
+ * Note that the ltests.h file will do nothing if LUA_DEBUG is not defined.
+ * This is done this way to avoid having a conditional dependency.
+ */
+#include "ltests.h"
 
 /*
 ** RCS ident string

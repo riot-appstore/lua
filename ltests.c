@@ -4,7 +4,6 @@
 ** See Copyright Notice in lua.h
 */
 
-#define ltests_c
 #define LUA_CORE
 
 #include "lprefix.h"
@@ -40,12 +39,6 @@
 #if defined(LUA_DEBUG)
 
 
-void *l_Trick = 0;
-
-
-int islocked = 0;
-
-
 #define obj_at(L,k)	(L->ci->func + (k))
 
 
@@ -63,14 +56,6 @@ static void pushobject (lua_State *L, const TValue *o) {
   setobj2s(L, L->top, o);
   api_incr_top(L);
 }
-
-
-static int tpanic (lua_State *L) {
-  fprintf(stderr, "PANIC: unprotected error in call to Lua API (%s)\n",
-                   lua_tostring(L, -1));
-  return (exit(EXIT_FAILURE), 0);  /* do not return to Lua */
-}
-
 
 /*
 ** {======================================================================
@@ -103,11 +88,6 @@ typedef union Header {
 
 #endif
 
-
-Memcontrol l_memcontrol =
-  {0L, 0L, 0L, 0L, {0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L}};
-
-
 static void freeblock (Memcontrol *mc, Header *block) {
   if (block) {
     size_t size = block->d.size;
@@ -116,16 +96,17 @@ static void freeblock (Memcontrol *mc, Header *block) {
       lua_assert(*(cast(char *, block + 1) + size + i) == MARK);
     mc->objcount[block->d.type]--;
     fillmem(block, sizeof(Header) + size + MARKSIZE);  /* erase block */
-    free(block);  /* actually free block */
+    mc->alloc_f(mc->alloc_ud, block, size, 0);  /* actually free block */
     mc->numblocks--;  /* update counts */
     mc->total -= size;
   }
 }
 
 
-void *debug_realloc (void *ud, void *b, size_t oldsize, size_t size) {
+static void *debug_realloc (void *ud, void *b, size_t oldsize, size_t size) {
   Memcontrol *mc = cast(Memcontrol *, ud);
   Header *block = cast(Header *, b);
+
   int type;
   if (mc->memlimit == 0) {  /* first time? */
     char *limit = getenv("MEMLIMIT");  /* initialize memory limit */
@@ -152,7 +133,9 @@ void *debug_realloc (void *ud, void *b, size_t oldsize, size_t size) {
     size_t commonsize = (oldsize < size) ? oldsize : size;
     size_t realsize = sizeof(Header) + size + MARKSIZE;
     if (realsize < size) return NULL;  /* arithmetic overflow! */
-    newblock = cast(Header *, malloc(realsize));  /* alloc a new block */
+    /* alloc a new block */
+    newblock = cast(Header *, mc->alloc_f(mc->alloc_ud, NULL, oldsize, realsize));
+
     if (newblock == NULL) return NULL;  /* really out of memory? */
     if (block) {
       memcpy(newblock + 1, block + 1, commonsize);  /* copy old contents */
@@ -578,18 +561,26 @@ static int get_limits (lua_State *L) {
   return 1;
 }
 
+static Memcontrol *get_memcontrol(lua_State *L)
+{
+  void *ud;
+
+  lua_getallocf(L, &ud);
+
+  return (Memcontrol *)ud;
+}
 
 static int mem_query (lua_State *L) {
   if (lua_isnone(L, 1)) {
-    lua_pushinteger(L, l_memcontrol.total);
-    lua_pushinteger(L, l_memcontrol.numblocks);
-    lua_pushinteger(L, l_memcontrol.maxmem);
+    lua_pushinteger(L, get_memcontrol(L)->total);
+    lua_pushinteger(L, get_memcontrol(L)->numblocks);
+    lua_pushinteger(L, get_memcontrol(L)->maxmem);
     return 3;
   }
   else if (lua_isnumber(L, 1)) {
     unsigned long limit = cast(unsigned long, luaL_checkinteger(L, 1));
     if (limit == 0) limit = ULONG_MAX;
-    l_memcontrol.memlimit = limit;
+    get_memcontrol(L)->memlimit = limit;
     return 0;
   }
   else {
@@ -597,7 +588,7 @@ static int mem_query (lua_State *L) {
     int i;
     for (i = LUA_NUMTAGS - 1; i >= 0; i--) {
       if (strcmp(t, ttypename(i)) == 0) {
-        lua_pushinteger(L, l_memcontrol.objcount[i]);
+        lua_pushinteger(L, get_memcontrol(L)->objcount[i]);
         return 1;
       }
     }
@@ -608,9 +599,9 @@ static int mem_query (lua_State *L) {
 
 static int settrick (lua_State *L) {
   if (ttisnil(obj_at(L, 1)))
-    l_Trick = NULL;
+    gettrick(L) = NULL;
   else
-    l_Trick = gcvalue(obj_at(L, 1));
+    gettrick(L) = gcvalue(obj_at(L, 1));
   return 0;
 }
 
@@ -827,13 +818,22 @@ static int num2int (lua_State *L) {
   return 1;
 }
 
+/* ugly way of getting the panic function without changing it.
+ */
+static lua_CFunction lua_getpanic (lua_State *L)
+{
+  lua_CFunction panicf = lua_atpanic(L, NULL);
+  lua_atpanic(L, panicf);
+
+  return panicf;
+}
 
 static int newstate (lua_State *L) {
   void *ud;
   lua_Alloc f = lua_getallocf(L, &ud);
   lua_State *L1 = lua_newstate(f, ud);
   if (L1) {
-    lua_atpanic(L1, tpanic);
+    lua_atpanic(L1, lua_getpanic(L));
     lua_pushlightuserdata(L, L1);
   }
   else
@@ -1549,19 +1549,32 @@ static const struct luaL_Reg tests_funcs[] = {
 };
 
 
-static void checkfinalmem (void) {
-  lua_assert(l_memcontrol.numblocks == 0);
-  lua_assert(l_memcontrol.total == 0);
+void luaB_init_memcontrol(Memcontrol *mc, lua_Alloc f, void *ud)
+{
+  memset(mc, 0, sizeof(*mc));
+
+  mc->alloc_f = f;
+  mc->alloc_ud = ud;
 }
 
+lua_State * luaB_newstate(Memcontrol *mc)
+{
+  return lua_newstate(debug_realloc, mc);
+}
+
+void luaB_close(lua_State *L)
+{
+  Memcontrol * l_memcontrol = get_memcontrol(L);
+
+  lua_close(L);
+
+  lua_assert(l_memcontrol->numblocks == 0);
+  lua_assert(l_memcontrol->total == 0);
+}
 
 int luaB_opentests (lua_State *L) {
   void *ud;
-  lua_atpanic(L, &tpanic);
-  atexit(checkfinalmem);
   lua_assert(lua_getallocf(L, &ud) == debug_realloc);
-  lua_assert(ud == cast(void *, &l_memcontrol));
-  lua_setallocf(L, lua_getallocf(L, NULL), ud);
   luaL_newlib(L, tests_funcs);
   return 1;
 }
