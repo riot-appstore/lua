@@ -1,0 +1,7 @@
+*.o
+*.gch
+*.d
+*.a
+lua
+lua-dbg
+*.patch
