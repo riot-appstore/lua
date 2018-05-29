@@ -33,7 +33,9 @@
 ** ensure that all software connected to Lua will be compiled with the
 ** same configuration.
 */
-/* #define LUA_32BITS */
+#ifndef LUA_64BITS
+#define LUA_32BITS
+#endif
 
 
 /*
@@ -753,7 +755,7 @@
 #if LUA_FLOAT_TYPE == LUA_FLOAT_LONGDOUBLE
 #define LUAL_BUFFERSIZE		8192
 #else
-#define LUAL_BUFFERSIZE   ((int)(0x80 * sizeof(void*) * sizeof(lua_Integer)))
+#define LUAL_BUFFERSIZE   64
 #endif
 
 #endif
