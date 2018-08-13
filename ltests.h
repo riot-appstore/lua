@@ -58,7 +58,9 @@ typedef struct Memcontrol {
   unsigned long total;
   unsigned long maxmem;
   unsigned long memlimit;
-  unsigned long objcount[LUA_NUMTAGS];
+  unsigned long objcount[LUA_NUMTAGS]; /* number of objects of each type */
+  unsigned long objtotal[LUA_NUMTAGS]; /* memory used by all object of each type
+                                        sum of elements must be equal to 'total' */
 } Memcontrol;
 
 /*
